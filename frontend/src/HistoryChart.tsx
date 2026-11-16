@@ -47,8 +47,12 @@ export default function HistoryChart({
         </select>
       </label>
     </div>
-    {chartData.length
-      ?<div className="history-chart">
+    {chartData.length>=2
+      ?<div
+        className="history-chart"
+        role="img"
+        aria-label={`Chart of ${selected.label} across ${chartData.length} saved checks. It shows recorded values only and does not judge health.`}
+      >
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={{top:15,right:12,bottom:3,left:0}}>
             <CartesianGrid stroke="#e8efeb" strokeDasharray="3 3"/>
@@ -60,7 +64,13 @@ export default function HistoryChart({
         </ResponsiveContainer>
       </div>
       :<div className="history-empty chart-empty">
-        <p>After you save assessments with this measurement, its values will appear here.</p>
+        {chartData.length===1
+          ?<>
+            <p>One saved value is available for {selected.label.toLowerCase()}. Complete another check to compare values over time.</p>
+            <strong>{chartData[0].value}{selected.unit?` ${selected.unit}`:''}</strong>
+            <small>{chartData[0].date}</small>
+          </>
+          :<p>After you save assessments with this measurement, its values will appear here.</p>}
       </div>}
   </section>;
 }

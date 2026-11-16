@@ -66,7 +66,7 @@ async function apiRequest(path:string,init?:RequestInit):Promise<unknown> {
   try{
     response=await fetch(`${API}${path}`,init);
   }catch{
-    throw new Error(`CARDIA could not reach its service at ${API}. Check that the backend is running, then retry.`);
+    throw new Error(`CARDIA could not connect. Check that the service is running, then try again.`);
   }
   const body:unknown=await response.json().catch(()=>null);
   if(!response.ok){
@@ -75,7 +75,7 @@ async function apiRequest(path:string,init?:RequestInit):Promise<unknown> {
       :`The CARDIA service returned an error (${response.status}).`;
     throw new Error(detail);
   }
-  if(body===null)throw new Error('The CARDIA service returned an unreadable response.');
+  if(body===null)throw new Error('CARDIA received a response it could not read. Please try again.');
   return body;
 }
 
@@ -89,8 +89,8 @@ function dateLabel(value:string,includeTime=false):string {
 
 function patternLabel(record:AssessmentRecord):string {
   return record.predictedClass===1
-    ?'A pattern linked to heart-disease cases in older records was found.'
-    :'That pattern was not identified in the information entered.';
+    ?'The AI found a pattern linked to heart-disease records in the study.'
+    :'The AI did not find that study pattern in the information entered.';
 }
 
 function Field({
@@ -193,18 +193,55 @@ function FieldInfoDrawer({
   </dialog>;
 }
 
-function MeasurementCard({feature,value}:{feature:FeatureKey;value:number}) {
+type HealthSource=typeof healthInformation.age.sources[number];
+
+function SourceDetails({sources,title='Sources and further reading'}:{sources:HealthSource[];title?:string}) {
+  const uniqueSources=[...new Map(sources.map(source=>[source.url,source])).values()];
+  if(!uniqueSources.length)return null;
+  return <details className="source-details">
+    <summary>{title}</summary>
+    <ul>{uniqueSources.map(source=><li key={source.url}>
+      <a href={source.url} target="_blank" rel="noreferrer">{source.label}</a>
+      <small>{source.kind==='dataset'?'Study information':'General health information'}</small>
+    </li>)}</ul>
+  </details>;
+}
+
+function InfluenceRow({
+  feature,value,contribution,predictedClass,relativeMagnitude,
+}:{
+  feature:FeatureKey;
+  value:number;
+  contribution:number;
+  predictedClass:0|1;
+  relativeMagnitude:number;
+}) {
   const info=healthInformation[feature];
-  return <article className="measurement-card">
-    <div className="measurement-heading"><h4>{info.label}</h4><strong>{formatFeatureValue(feature,value)}</strong></div>
-    <p>{info.meaning}</p>
-    <p><b>Why it can matter:</b> {info.relevance}</p>
-    <p><b>What this answer cannot tell us:</b> {info.limitations}</p>
-    <div className="source-list"><b>Learn from:</b>{info.sources.map(source=>
-      <a key={source.url} href={source.url} target="_blank" rel="noreferrer">
-        {source.kind==='dataset'?'Original study field: ':'General health information: '}{source.label}
-      </a>)}</div>
-  </article>;
+  const movedToward=predictedClass===1?contribution>0:contribution<0;
+  const direction=contribution===0?'No measurable shift'
+    :movedToward?'Toward this result'
+    :'Away from this result';
+  return <details className="influence-row">
+    <summary>
+      <span className="influence-main">
+        <span className="influence-title">{info.label}</span>
+        <strong>{formatFeatureValue(feature,value)}</strong>
+      </span>
+      <span className="influence-direction">{direction}</span>
+      <span
+        className="influence-track"
+        role="img"
+        aria-label={`Relative influence: ${relativeMagnitude.toFixed(0)} percent; ${direction.toLowerCase()}`}
+      ><i className={contribution===0?'neutral':movedToward?'toward':'away'} style={{width:`${relativeMagnitude}%`}}/></span>
+      <ChevronDown className="influence-chevron" size={16} aria-hidden="true"/>
+    </summary>
+    <div className="influence-detail">
+      <p>{info.meaning}</p>
+      <p><b>Why it may matter:</b> {info.relevance}</p>
+      <p><b>What this cannot tell you:</b> {info.limitations}</p>
+      <p className="influence-safety">This describes how the AI used your answer. It is not a medical cause or diagnosis.</p>
+    </div>
+  </details>;
 }
 
 function AssessmentResult({
@@ -217,90 +254,62 @@ function AssessmentResult({
     ?[...record.explanation.contributions].sort((a,b)=>Math.abs(b.value)-Math.abs(a.value))
     :[];
   const maxContribution=Math.max(...ranked.map(item=>Math.abs(item.value)),1e-12);
+  const selectedProbability=record.predictedClass===1?record.probabilities.class1:record.probabilities.class0;
+  const otherProbability=record.predictedClass===1?record.probabilities.class0:record.probabilities.class1;
+  const selectedPattern=record.predictedClass===1
+    ?'Pattern linked to heart-disease records in the study'
+    :'Other pattern in the study records';
+  const resultSources=featureKeys.flatMap(feature=>healthInformation[feature].sources);
   return <section className="panel result-panel" aria-live="polite">
     <div className="result-heading">
       <div>
-        <span className="eyebrow">YOUR ASSESSMENT</span>
-        <h2>Your assessment is ready.</h2>
+        <span className="eyebrow">YOUR RESULT</span>
+        <h2>Your assessment result</h2>
         <p>{patternLabel(record)}</p>
       </div>
       <div className="result-mark"><Check size={22}/></div>
     </div>
-    <p className="result-probability-note">
-      This is a research-model result, not a diagnosis or a medically validated estimate of your personal risk.
-    </p>
-    <section className="result-section">
-      <h3>What did the computer find?</h3>
-      <p>{patternLabel(record)} This result describes a pattern in the information entered, not a confirmed health condition.</p>
-    </section>
-    <div className="class-output-grid">
-      <div className={record.predictedClass===1?'selected':''}>
-        <span>Pattern linked to heart-disease cases in the original study</span>
-        <strong>{(record.probabilities.class1*100).toFixed(1)}%</strong>
-        <small>Model output; not your personal chance of disease</small>
+    <div className="result-score">
+      <div>
+        <span>AI estimate for this study pattern</span>
+        <strong>{(selectedProbability*100).toFixed(1)}%</strong>
+        <small>{selectedPattern}</small>
       </div>
-      <div className={record.predictedClass===0?'selected':''}>
-        <span>Other pattern in the original study</span>
-        <strong>{(record.probabilities.class0*100).toFixed(1)}%</strong>
-        <small>Model output; not proof that disease is absent</small>
-      </div>
+      <p>This is an educational AI estimate, not a medical diagnosis or your personal chance of having heart disease.</p>
     </div>
     <section className="result-section">
-      <h3>What information influenced the result?</h3>
+      <h3>How did the AI reach this result?</h3>
+      <p>The AI compared your answers with patterns in older heart-health records. It used those patterns to prepare this result; it cannot confirm a health condition.</p>
+      <ol className="result-process">
+        <li><b>You enter answers</b><span>Use information from your records.</span></li>
+        <li><b>The AI compares patterns</b><span>It looks for patterns found in the study records.</span></li>
+        <li><b>CARDIA explains the result</b><span>You can review which answers influenced the computer.</span></li>
+      </ol>
+    </section>
+    <section className="result-section">
+      <h3>What influenced your result?</h3>
       {record.explanation&&record.inputs
         ?<>
-          <p>These are the six answers with the strongest influence on this model output. An influence is not a medical cause or a diagnosis.</p>
-          <div className="measurement-list">
-            {ranked.slice(0,6).map(item=><MeasurementCard
+          <p>The AI looked at your answers and measurements. These had the strongest influence on its result. The bars compare their relative influence; they are not health-risk scores.</p>
+          <div className="influence-list">
+            {ranked.slice(0,6).map(item=><InfluenceRow
               key={item.feature}
               feature={item.feature}
               value={record.inputs![item.feature]}
+              contribution={item.value}
+              predictedClass={record.predictedClass}
+              relativeMagnitude={Math.abs(item.value)/maxContribution*100}
             />)}
           </div>
-          <div className="shap-list">
-            {ranked.slice(0,8).map(item=>{
-              const movedToward=record.predictedClass===1?item.value>0:item.value<0;
-              const direction=item.value===0?'No measurable movement':movedToward
-                ?'Moved toward the result selected'
-                :'Moved away from the result selected';
-              const magnitude=Math.abs(item.value)/maxContribution*100;
-              return <div className="shap-item" key={item.feature}>
-                <div className="shap-label"><b>{labels[item.feature]}</b><span>{direction}</span></div>
-                <div className="contribution-track" aria-label={`${direction}; relative magnitude ${magnitude.toFixed(0)} percent`}>
-                  <i className={movedToward?'toward':'away'} style={{width:`${magnitude}%`}}/>
-                </div>
-              </div>;
-            })}
-          </div>
-          <details className="all-measurements">
-            <summary>View explanations for all 13 answers</summary>
-            <p className="all-measurements-intro">Each explanation describes the recorded field in general terms. It does not interpret your value as normal, abnormal, or diagnostic.</p>
-            <div className="measurement-list">
-              {featureKeys.map(feature=><MeasurementCard
-                key={feature}
-                feature={feature}
-                value={record.inputs![feature]}
-              />)}
-            </div>
-          </details>
-          <details className="technical-details">
-            <summary>Advanced explanation details</summary>
-            <p>These values come from the local SHAP explanation for this assessment. Positive values move the model output toward the heart-disease study label; negative values move it away. They describe the model, not a medical cause.</p>
-            <p><b>Reference output:</b> {record.explanation.base_value.toFixed(4)}</p>
-            <div className="technical-contributions-wrap">
-              <table className="technical-contributions">
-                <thead><tr><th>Input key</th><th>Entered answer</th><th>Contribution</th></tr></thead>
-                <tbody>{ranked.map(item=><tr key={item.feature}>
-                  <td>{item.feature}</td>
-                  <td>{record.inputs?formatFeatureValue(item.feature,record.inputs[item.feature]):'Not saved'}</td>
-                  <td>{item.value.toFixed(5)}</td>
-                </tr>)}</tbody>
-              </table>
-            </div>
-            <small>{record.explanation.note}</small>
+          <details className="all-answers">
+            <summary>See all 13 answers</summary>
+            <dl className="answers-grid">{featureKeys.map(feature=><div key={feature}>
+              <dt>{labels[feature]}</dt>
+              <dd>{formatFeatureValue(feature,record.inputs![feature])}</dd>
+            </div>)}</dl>
           </details>
         </>
-        :<p className="explanation-error">{record.explanationError||'The explanation is unavailable for this assessment. No feature-level explanation is shown.'}</p>}
+        :<p className="explanation-error">We could not show which answers influenced this result. The estimate is still shown above, but it is for learning only.</p>}
     </section>
     <section className="result-section next-steps">
       <h3>What to do next</h3>
@@ -311,6 +320,37 @@ function AssessmentResult({
       </ul>
       <p className="emergency-warning">If you have severe or new chest pain, difficulty breathing, fainting, or other possible emergency symptoms, seek immediate medical attention. Do not wait for this application.</p>
     </section>
+    <SourceDetails sources={resultSources}/>
+    <details className="technical-details">
+      <summary>Technical details (optional)</summary>
+      <p>This section is for students and researchers. The values describe how the AI calculated its result; they do not explain a medical cause.</p>
+      <dl className="technical-summary">
+        <div><dt>Model</dt><dd>{record.modelName}</dd></div>
+        <div><dt>Model version</dt><dd>{record.modelVersion}</dd></div>
+        <div><dt>Decision cutoff</dt><dd>{(record.decisionThreshold*100).toFixed(0)}%</dd></div>
+        <div><dt>Selected study-pattern score</dt><dd>{(selectedProbability*100).toFixed(1)}%</dd></div>
+        <div><dt>Other study-pattern score</dt><dd>{(otherProbability*100).toFixed(1)}%</dd></div>
+        <div><dt>Study information</dt><dd>Small, historical Cleveland heart-health records; not a clinical validation.</dd></div>
+      </dl>
+      {record.explanation&&record.inputs&&<>
+        <h4>Local feature contributions</h4>
+        <p>These SHAP contributions are shown in log-odds. Positive values move the model toward its heart-disease study category; negative values move it away. They are model calculations, not medical causes.</p>
+        <p><b>Reference output:</b> {record.explanation.base_value.toFixed(4)}</p>
+        <div className="technical-contributions-wrap">
+          <table className="technical-contributions">
+            <thead><tr><th>Original input name</th><th>Entered answer</th><th>Submitted code/value</th><th>SHAP contribution</th></tr></thead>
+            <tbody>{ranked.map(item=><tr key={item.feature}>
+              <td>{item.feature}</td>
+              <td>{formatFeatureValue(item.feature,record.inputs![item.feature])}</td>
+              <td>{record.inputs![item.feature]}</td>
+              <td>{item.value.toFixed(5)}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+        <small>{record.explanation.note}</small>
+      </>}
+      {record.explanationError&&<p>Explanation status: {record.explanationError}</p>}
+    </details>
     {onViewHistory&&<button className="secondary-button result-history-link" onClick={onViewHistory}>
       <History size={16}/> View or download this saved assessment
     </button>}
@@ -349,10 +389,10 @@ function App() {
         apiRequest('/api/input-schema'),
       ]);
       if(typeof healthInfo!=='object'||healthInfo===null||!('status'in healthInfo)||(healthInfo as Record<string,unknown>).status!=='ok'){
-        throw new Error('The CARDIA prediction service is not ready.');
+        throw new Error('The CARDIA service is not ready yet.');
       }
-      if(!isModelInfo(modelInfo))throw new Error('The model information response is incomplete.');
-      if(!isInputSchema(schema))throw new Error('The backend did not provide valid input rules for all 13 answers.');
+      if(!isModelInfo(modelInfo))throw new Error('CARDIA could not load its study information.');
+      if(!isInputSchema(schema))throw new Error('CARDIA could not load answer guidance for all questions.');
       setModel(modelInfo);
       setInputSchema(schema);
       setHealth('online');
@@ -399,7 +439,7 @@ function App() {
 
   const runAssessment=async()=>{
     if(!inputSchema){
-      setError('Input rules are not available. Reconnect to CARDIA before submitting.');
+      setError('Answer guidance is unavailable. Reconnect to CARDIA before submitting.');
       return;
     }
     const issues=validatePatient(patient,inputSchema);
@@ -498,17 +538,16 @@ function App() {
     try{
       const lines=[
         'CARDIA assessment summary',
-        `Assessment ID: ${record.id}`,
         `Date: ${dateLabel(record.createdAt,true)}`,
         '',
-        'Research-model output (not a diagnosis or personal clinical risk):',
-        `Pattern linked to heart-disease cases in the original study: ${(record.probabilities.class1*100).toFixed(1)}%`,
-        `Other pattern in the original study: ${(record.probabilities.class0*100).toFixed(1)}%`,
+        'AI estimate (for learning only; not a diagnosis or your personal chance of heart disease):',
+        `Pattern linked to heart-disease records in the study: ${(record.probabilities.class1*100).toFixed(1)}%`,
+        `Other pattern in the study records: ${(record.probabilities.class0*100).toFixed(1)}%`,
         '',
         'Submitted information:',
         ...(record.inputs?featureKeys.map(key=>`- ${labels[key]}: ${formatFeatureValue(key,record.inputs![key])}`):['- Detailed answers were not saved with this older assessment.']),
         '',
-        'What influenced the model:',
+        'What influenced the AI result:',
         ...(record.explanation
           ?[...record.explanation.contributions]
             .sort((a,b)=>Math.abs(b.value)-Math.abs(a.value))
@@ -591,12 +630,15 @@ function App() {
         <button className="mobile-menu" aria-label="Open navigation" onClick={()=>setMobileNav(!mobileNav)}><Menu/></button>
         <div className="breadcrumb">CARDIA <span>/</span> <b>{navItems.find(item=>item.id===page)?.label}</b></div>
         <div className="top-actions">
-          <span className={`status ${health}`}><i/>{health==='online'?'Service ready':health==='offline'?'Service unavailable':'Connecting'}</span>
+          <span className={`status ${health}`}><i/>{health==='online'?'Connected':health==='offline'?"Can't connect":'Connecting'}</span>
           {health==='offline'&&<button className="text-button" onClick={()=>void checkService()}>Retry</button>}
         </div>
       </header>
       <div className="content">
         {storageWarning&&<div className="storage-warning" role="status">{storageWarning}</div>}
+        {health==='offline'&&<div className="service-inline-error" role="status">
+          {serviceError||"CARDIA couldn't connect. Check the service and try again."}
+        </div>}
         <AnimatePresence mode="wait">
           <motion.div key={page} initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-5}} transition={{duration:.18}}>
             {page==='home'&&<HomePage
@@ -678,7 +720,7 @@ function HomePage({
     </div>
     <div className="notice">
       <div className="notice-icon"><ShieldCheck size={19}/></div>
-      <div><b>For learning only</b><p>This research model is not a diagnosis or a replacement for a healthcare professional. Do not use this demo with real patient information.</p></div>
+      <div><b>For learning only</b><p>This AI result is not a medical diagnosis or a replacement for professional care. Use fictional information in this demo.</p></div>
     </div>
     <div className="home-activity-grid">
       <Suspense fallback={<div className="panel history-empty chart-empty" role="status">Loading measurement history…</div>}>
@@ -693,8 +735,8 @@ function HomePage({
             <ArrowRight size={15}/>
           </button>)}</div>
           :<div className="history-empty">
-            <HeartPulse size={26}/><h3>No activity yet</h3>
-            <p>When you complete a demonstration check, its date and submitted measurements can be reviewed here.</p>
+            <HeartPulse size={26}/><h3>No checks yet</h3>
+            <p>You have not completed a check yet. Start your first demo check to see its date and answers here.</p>
             <button className="text-button" onClick={onStart}>Start your first check <ArrowRight size={14}/></button>
           </div>}
       </section>
@@ -743,7 +785,7 @@ function AssessmentPage({
         {step<3
           ?<div className="field-grid">{schema
             ?steps[step].keys.map(key=><Field key={key} name={key} value={patient[key]} schema={schema} onChange={value=>onChange(key,value)} onOpenInfo={setInfoFeature}/>)
-            :<div className="service-inline-error">Input rules are unavailable. Reconnect to CARDIA before entering answers.</div>}</div>
+            :<div className="service-inline-error">Answer guidance is unavailable. Reconnect to CARDIA before entering answers.</div>}</div>
           :<div className="review-grid">{featureKeys.map(key=><div className="review-item" key={key}>
             <span>{labels[key]}</span>
             <b>{patient[key]===undefined?'Not entered':formatFeatureValue(key,patient[key])}</b>
@@ -753,14 +795,14 @@ function AssessmentPage({
           <b>Please check these answers:</b><ul>{formErrors.map(issue=><li key={issue}>{issue}</li>)}</ul>
         </div>}
         {error&&<div className="error-box" role="alert">{error}</div>}
-        {step===3&&health!=='online'&&<div className="error-box" role="status">Connect to the CARDIA service before submitting. Use Retry in the top bar.</div>}
+        {step===3&&health!=='online'&&<div className="error-box" role="status">Reconnect to CARDIA before submitting. Use Retry at the top of the page.</div>}
         <div className="form-footer">
           <button className="secondary-button" disabled={step===0||loading} onClick={()=>onStepChange(step-1)}><ArrowLeft size={16}/> Back</button>
           {step<3
             ?<button className="primary-button" disabled={!schema||loading} onClick={onContinue}>Continue <ArrowRight size={16}/></button>
             :<button className="primary-button" disabled={loading||health!=='online'||!schema} onClick={onSubmit}>
               {loading?<LoaderCircle className="spin" size={17}/>:<Activity size={17}/>}
-              {loading?'Preparing your result…':'Submit for a result'}
+              {loading?'Preparing your result…':'Show my result'}
             </button>}
         </div>
       </section>
@@ -788,7 +830,7 @@ function HistoryPage({
       {records.length>0&&<button className="secondary-button" onClick={onClear}><Trash2 size={15}/> Delete all demo records</button>}
     </div>
     <div className="notice"><div className="notice-icon"><ShieldCheck size={19}/></div><div>
-      <b>Stored in this browser only</b><p>This is not secure medical-record storage or a signed-in account. Do not save real patient information.</p>
+      <b>Stored in this browser only</b><p>This is not a secure medical record or a signed-in account. Do not save real patient information.</p>
     </div></div>
     {message&&<div className="storage-warning" role="status">{message}</div>}
     {records.length
@@ -816,7 +858,7 @@ function HistoryPage({
               :<section className="panel result-panel">
                 <h2>Older saved assessment</h2><p>{dateLabel(selected.createdAt,true)}</p>
                 <p>{patternLabel(selected)}</p>
-                <p>Only the age and model output were saved in this older demo record. Missing measurements and explanations have not been recreated.</p>
+                <p>This older entry saved only your age and result. The other answers and explanation were not stored, so they cannot be shown.</p>
                 <div className="class-output-grid">
                   <div><span>Pattern linked to heart-disease cases in the original study</span><strong>{(selected.probabilities.class1*100).toFixed(1)}%</strong></div>
                   <div><span>Other pattern in the original study</span><strong>{(selected.probabilities.class0*100).toFixed(1)}%</strong></div>
@@ -826,7 +868,7 @@ function HistoryPage({
         </section>
       </div>
       :<div className="panel history-empty history-empty-large">
-        <History size={30}/><h2>No saved checks yet</h2><p>Complete a demonstration check to see its date, answers, and explanation here.</p>
+        <History size={30}/><h2>No saved checks yet</h2><p>You have not completed an assessment yet. Start your first check to see your result and answers here.</p>
         <button className="primary-button" onClick={onStart}>Start a heart health check <ArrowRight size={15}/></button>
       </div>}
   </>;
@@ -843,15 +885,15 @@ function LearningPage() {
     {title:'Understanding chest discomfort',feature:'cp'},
     {
       title:'How this computer model works',feature:'age',source:AI_HEALTH_SOURCE,
-      description:'The model compares the information entered with patterns in older heart-health records. It does not understand a person’s full health history.',
+      description:'The computer compares the information entered with patterns in older heart-health records. It does not know a person’s full health history.',
     },
     {
       title:'What a computer prediction can tell you',feature:'age',source:AI_HEALTH_SOURCE,
-      description:'A prediction shows how this particular research model classified the entered information. It cannot confirm a condition or forecast what will happen to an individual.',
+      description:'The result shows which pattern the computer matched to the answers entered. It cannot confirm a health condition or predict what will happen to one person.',
     },
     {
       title:'Why an AI result is not a diagnosis',feature:'age',source:AI_HEALTH_SOURCE,
-      description:'A diagnosis requires a qualified healthcare professional to review symptoms, examination findings, medical history, and appropriate tests. CARDIA is not clinically validated and cannot replace that assessment.',
+      description:'A healthcare professional considers symptoms, medical history, and test results together. CARDIA cannot confirm a condition or replace that assessment.',
     },
   ];
   return <>
@@ -863,9 +905,11 @@ function LearningPage() {
         <h2>{topic.title}</h2>
         <p>{topic.description??info.meaning}</p>
         {!topic.description&&<p>{info.limitations}</p>}
-        <div className="source-list">{(topic.source?[topic.source]:info.sources).map(source=><a key={source.url} href={source.url} target="_blank" rel="noreferrer">{source.label}</a>)}</div>
       </article>;
     })}</div>
+    <SourceDetails sources={topics.flatMap(topic=>
+      topic.source?[topic.source]:healthInformation[topic.feature].sources
+    )}/>
     <div className="notice"><div className="notice-icon"><Stethoscope size={19}/></div><div><b>Get personal medical questions answered by a healthcare professional</b><p>This guide is general information, not a diagnosis or a treatment plan.</p></div></div>
   </>;
 }
@@ -878,17 +922,17 @@ function AboutPage({model,cvRows}:{model:ModelInfo|null;cvRows:Array<Record<stri
     <div className="page-heading"><div><span className="eyebrow">ABOUT THIS DEMO</span><h1>About CARDIA</h1><p>A learning project that explores how computer models process health information.</p></div></div>
     <section className="panel about-panel">
       <h2>What CARDIA is for</h2>
-      <p>CARDIA demonstrates a research model trained on a small, older collection of heart-health records. It can show an educational pattern from entered answers, but it is not clinically validated and must not be used to screen, diagnose, triage, or guide treatment.</p>
+      <p>CARDIA is a learning project that compares entered answers with a small collection of older heart-health records. It has not been tested to tell someone whether they have heart disease or what care they need.</p>
       <h3>Important limits</h3>
       <ul className="limitations">
-        <li>The source records are small in number, old, and may not represent people today.</li>
-        <li>The model’s percentages are not verified personal risk estimates.</li>
-        <li>An explanation describes the model’s output, not why a health condition occurred.</li>
-        <li>Do not enter real patient information in this browser-only demo.</li>
+        <li>The records are limited and may not represent people today.</li>
+        <li>The computer's percentage is not your personal chance of having heart disease.</li>
+        <li>An explanation shows how the computer used your answers. It does not show what caused a health condition.</li>
+        <li>Use fictional information only. This demo is saved in this browser and is not secure medical-record storage.</li>
       </ul>
       <details className="advanced-details">
-        <summary>Advanced model information</summary>
-        <p>This section is for students and developers. CARDIA uses {model?.selected_model||'the configured model'}; the prediction API selects the positive-class probability using the model’s explicit class label. The decision cutoff is {classificationThreshold.toFixed(2)}. Local explanations use actual SHAP contributions and are checked against the model’s output.</p>
+        <summary>Technical details (optional)</summary>
+        <p>This section is for students and developers. CARDIA uses {model?.selected_model||'the configured model'} and a {classificationThreshold.toFixed(2)} decision cutoff. Its local SHAP calculations are checked against the model's output.</p>
         <div className="advanced-metrics">
           <div><span>ROC–AUC</span><b>{metric('roc_auc')?.toFixed(3)??'—'}</b></div>
           <div><span>Accuracy</span><b>{metric('accuracy')!==null?`${(metric('accuracy')!*100).toFixed(1)}%`:'—'}</b></div>
