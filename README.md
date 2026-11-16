@@ -69,13 +69,18 @@ VITE_API_URL=http://localhost:8000
 ```
 Restart Vite after changing environment variables.
 
-### 4. Build for deployment
+### 4. Deploy with Docker Compose
 
+Install Docker Engine/Desktop with the Compose plugin, then from the repository root run:
 ```bash
-cd frontend
-npm run build
+docker compose up --build -d
 ```
-The static frontend output is generated in `frontend/dist`. Deploy it to a static frontend host and deploy the FastAPI service separately. Set `VITE_API_URL` to the public HTTPS API URL at frontend build time, and set `CARDIA_CORS_ORIGINS` on the API service to the exact deployed frontend domain. Do not use wildcard CORS in production.
+
+Open `http://localhost:8080`. Nginx serves the built React app and forwards `/api` requests to the private FastAPI service. The frontend binds to `127.0.0.1` by default, so it is reachable only from the host. Set `CARDIA_HTTP_PORT` to change the local host port. To stop the services, run `docker compose down`.
+
+The Compose stack is a deployable container baseline, not a complete public-production security boundary. For a remote deployment, set `CARDIA_HTTP_BIND_ADDRESS=0.0.0.0` only when it is behind a trusted HTTPS ingress/reverse proxy. CARDIA is an unauthenticated educational prototype and must only receive synthetic demonstration data; do not use it to store or process real patient information. See [Before any real-world patient use](#before-any-real-world-patient-use) before considering a clinical or patient-facing deployment.
+
+For separate frontend/API hosting, build with `VITE_API_URL` set to the HTTPS API origin, and set `CARDIA_CORS_ORIGINS` on the backend to the exact HTTPS frontend origin. The Vite build embeds this value; rebuild after changing it. Wildcard CORS is rejected. When the frontend and API share an origin through a reverse proxy, leave `VITE_API_URL` empty.
 
 ## API endpoints
 

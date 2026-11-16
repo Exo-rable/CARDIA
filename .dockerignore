@@ -1,0 +1,15 @@
+.git
+.venv
+venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/node_modules
+**/dist
+.env
+.env.*
+!.env.example
+data
+reports
+tests
+app.py

@@ -3,13 +3,15 @@ import threading
 import time
 import unittest
 from urllib import error, request
+from unittest.mock import patch
 
 import joblib
 import numpy as np
 import pandas as pd
 import uvicorn
 
-from backend.main import app
+from backend.main import app, health
+from fastapi import HTTPException
 from common import (CLASSIFICATION_THRESHOLD, CLEAN, FEATURES, LABELS, MODEL, POSITIVE_CLASS,
                     positive_class_probability, probabilities_in_class_order)
 
@@ -73,6 +75,13 @@ class ApiSmokeTests(unittest.TestCase):
         resp = self.fetch_json("/api/health")
         self.assertEqual(resp["status"], "ok")
         self.assertTrue(resp["model_loaded"])
+
+    def test_unavailable_model_returns_safe_health_error(self):
+        with patch("backend.main.resources", side_effect=RuntimeError("private-model-path")):
+            with self.assertRaises(HTTPException) as raised:
+                health()
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertNotIn("private-model-path", raised.exception.detail)
 
     def test_model_metadata(self):
         resp = self.fetch_json("/api/model")

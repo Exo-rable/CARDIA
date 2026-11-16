@@ -1,6 +1,16 @@
 venv/
 .venv/
 __pycache__/
-*.pyc
+*.py[cod]
 .ipynb_checkpoints/
 .DS_Store
+.pytest_cache/
+.coverage
+coverage/
+node_modules/
+frontend/dist/
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+*.log

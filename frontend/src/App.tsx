@@ -1,13 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Activity, ArrowLeft, ArrowRight, BookOpen, CalendarDays, Check, ChevronDown,
   CircleHelp, ClipboardList, Download, HeartPulse, History, Home, LoaderCircle,
   Info, Menu, RotateCcw, ShieldCheck, Stethoscope, Trash2, X,
 } from 'lucide-react';
-import {
-  CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
-} from 'recharts';
 import './patient-friendly.css';
 import {
   isExplanation, isInputSchema, isPatient, isPrediction,
@@ -20,12 +17,13 @@ import {
   categoryOptions, classificationThreshold, featureKeys, formatFeatureValue,
   healthInformation, AI_HEALTH_SOURCE, type FeatureKey,
 } from './healthInformation';
+import type { NumericFeature } from './HistoryChart';
 
 type Page = 'home'|'assessment'|'history'|'learning'|'about';
-type NumericFeature = 'trestbps'|'chol'|'thalach'|'oldpeak';
 type Step = { title:string; description:string; keys:FeatureKey[] };
 
-const API=(import.meta.env.VITE_API_URL||'http://localhost:8000').replace(/\/$/,'');
+const API=(import.meta.env.VITE_API_URL??(import.meta.env.DEV?'http://localhost:8000':'')).replace(/\/+$/,'');
+const HistoryChart=lazy(()=>import('./HistoryChart'));
 const steps:Step[]=[
   {title:'About You',description:'Enter basic information from your records.',keys:['age','sex']},
   {title:'Health Measurements',description:'Use readings as they appear in your records.',keys:['trestbps','chol','fbs']},
@@ -39,12 +37,6 @@ const labels:Record<FeatureKey,string>={
   oldpeak:healthInformation.oldpeak.label,slope:healthInformation.slope.label,ca:healthInformation.ca.label,
   thal:healthInformation.thal.label,
 };
-const numericMeasurements:{key:NumericFeature;label:string;unit:string}[]=[
-  {key:'trestbps',label:healthInformation.trestbps.label,unit:healthInformation.trestbps.unit||''},
-  {key:'chol',label:healthInformation.chol.label,unit:healthInformation.chol.unit||''},
-  {key:'thalach',label:healthInformation.thalach.label,unit:healthInformation.thalach.unit||''},
-  {key:'oldpeak',label:healthInformation.oldpeak.label,unit:''},
-];
 const navItems:{id:Page;label:string;icon:typeof Home}[]=[
   {id:'home',label:'Home',icon:Home},
   {id:'assessment',label:'Heart health check',icon:ClipboardList},
@@ -62,6 +54,14 @@ function isModelInfo(value:unknown):value is ModelInfo {
 }
 
 async function apiRequest(path:string,init?:RequestInit):Promise<unknown> {
+  if(import.meta.env.PROD){
+    const serviceUrl=new URL(API||window.location.origin,window.location.origin);
+    const isLocal=(hostname:string)=>hostname==='localhost'||hostname==='127.0.0.1'||hostname==='[::1]';
+    if((!isLocal(window.location.hostname)&&window.location.protocol!=='https:')
+      ||(!isLocal(serviceUrl.hostname)&&serviceUrl.protocol!=='https:')){
+      throw new Error('CARDIA must use HTTPS in production before connecting to the service.');
+    }
+  }
   let response:Response;
   try{
     response=await fetch(`${API}${path}`,init);
@@ -314,52 +314,6 @@ function AssessmentResult({
     {onViewHistory&&<button className="secondary-button result-history-link" onClick={onViewHistory}>
       <History size={16}/> View or download this saved assessment
     </button>}
-  </section>;
-}
-
-function HistoryChart({
-  records,feature,onFeatureChange,
-}:{
-  records:AssessmentRecord[];
-  feature:NumericFeature;
-  onFeatureChange:(feature:NumericFeature)=>void;
-}) {
-  const selected=numericMeasurements.find(item=>item.key===feature)!;
-  const chartData=records.filter(record=>record.inputs)
-    .slice().reverse()
-    .map(record=>({
-      date:dateLabel(record.createdAt),
-      timestamp:Date.parse(record.createdAt),
-      value:record.inputs?.[feature]??null,
-    }));
-  return <section className="panel chart-panel">
-    <div className="panel-head">
-      <div><h2>Measurement history</h2><p>Your submitted readings over time. The chart does not judge them as normal or abnormal.</p></div>
-      <label className="chart-select-label">Choose a measurement
-        <select value={feature} onChange={event=>{
-          const next=numericMeasurements.find(item=>item.key===event.target.value);
-          if(next)onFeatureChange(next.key);
-        }}>
-          {numericMeasurements.map(item=><option key={item.key} value={item.key}>{item.label}</option>)}
-        </select>
-      </label>
-    </div>
-    {chartData.length
-      ?<div className="history-chart">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData} margin={{top:15,right:12,bottom:3,left:0}}>
-            <CartesianGrid stroke="#e8efeb" strokeDasharray="3 3"/>
-            <XAxis dataKey="date" tick={{fill:'#71817E',fontSize:11}}/>
-            <YAxis unit={selected.unit?` ${selected.unit}`:''} domain={['auto','auto']} tick={{fill:'#71817E',fontSize:11}} width={62}/>
-            <Tooltip formatter={(value)=>[`${value}${selected.unit?` ${selected.unit}`:''}`,selected.label]} labelFormatter={label=>String(label)}/>
-            <Line type="monotone" dataKey="value" name={selected.label} stroke="#347F73" strokeWidth={3} dot={{r:4,fill:'#347F73'}} activeDot={{r:6}} connectNulls={false}/>
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-      :<div className="history-empty chart-empty">
-        <Activity size={25}/>
-        <p>After you save assessments with this measurement, its values will appear here.</p>
-      </div>}
   </section>;
 }
 
@@ -727,7 +681,9 @@ function HomePage({
       <div><b>For learning only</b><p>This research model is not a diagnosis or a replacement for a healthcare professional. Do not use this demo with real patient information.</p></div>
     </div>
     <div className="home-activity-grid">
-      <HistoryChart records={assessments} feature={chartFeature} onFeatureChange={onChartFeatureChange}/>
+      <Suspense fallback={<div className="panel history-empty chart-empty" role="status">Loading measurement history…</div>}>
+        <HistoryChart records={assessments} feature={chartFeature} onFeatureChange={onChartFeatureChange}/>
+      </Suspense>
       <section className="panel recent-panel">
         <div className="panel-head"><div><h2>Recent activity</h2><p>Your saved checks, newest first</p></div><History size={19}/></div>
         {assessments.length

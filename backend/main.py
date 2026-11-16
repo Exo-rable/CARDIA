@@ -1,6 +1,8 @@
 from __future__ import annotations
-import json, sys
+import json
+import logging
 import os
+import sys
 from pathlib import Path
 from functools import lru_cache
 
@@ -18,6 +20,7 @@ from common import BACKGROUND, FEATURES, META, MODEL, POSITIVE_CLASS, positive_c
 from backend.schemas import PatientInput, PredictionResponse
 
 app = FastAPI(title='Cardia Heart Risk API', version='1.0.0', description='Educational ML decision-support prototype.')
+logger = logging.getLogger(__name__)
 default_origins = 'http://localhost:5173,http://127.0.0.1:5173'
 allowed_origins = [
     origin.strip().rstrip('/')
@@ -51,7 +54,8 @@ def health():
         _, meta = resources()
         return {'status': 'ok', 'model_loaded': True, 'model_name': meta.get('selected_model', 'Unknown')}
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        logger.exception('Model health check failed')
+        raise HTTPException(status_code=503, detail='The prediction service is unavailable.') from exc
 
 @app.get('/api/model')
 def model_info():
@@ -68,7 +72,8 @@ def model_info():
             'warning': 'Small, single-source historical dataset. Not clinically validated.'
         }
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        logger.exception('Model information could not be loaded')
+        raise HTTPException(status_code=503, detail='Model information is temporarily unavailable.') from exc
 
 @app.get('/api/input-schema')
 def input_schema():
@@ -130,7 +135,8 @@ def explain(payload: PatientInput):
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f'Explanation failed: {exc}')
+        logger.exception('Local model explanation failed')
+        raise HTTPException(status_code=500, detail='The local explanation could not be generated.') from exc
 
 @app.post('/api/predict', response_model=PredictionResponse)
 def predict(payload: PatientInput):
@@ -145,4 +151,5 @@ def predict(payload: PatientInput):
             disclaimer='Educational estimate only. This output is not a diagnosis, screening result, or treatment recommendation.'
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f'Prediction failed: {exc}')
+        logger.exception('Model prediction failed')
+        raise HTTPException(status_code=500, detail='The prediction could not be generated.') from exc
