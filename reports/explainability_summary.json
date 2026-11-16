@@ -1,0 +1,12 @@
+{
+  "shap_additivity_max_error": 2.1094237467877974e-15,
+  "spearman_shap_vs_permutation": 0.6978021978021978,
+  "top5_overlap": 3,
+  "top_features_shap": [
+    "Thalassemia (stress test result)",
+    "Major vessels coloured by fluoroscopy",
+    "Chest pain type",
+    "ST depression (exercise vs rest)",
+    "Slope of peak exercise ST segment"
+  ]
+}

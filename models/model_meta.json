@@ -1,0 +1,149 @@
+{
+  "selected_model": "Logistic Regression",
+  "best_params": {
+    "model__C": 0.1
+  },
+  "tuned_cv_auc": 0.9140831390831391,
+  "n_train": 241,
+  "n_test": 61,
+  "features": [
+    "age",
+    "trestbps",
+    "chol",
+    "thalach",
+    "oldpeak",
+    "sex",
+    "cp",
+    "fbs",
+    "restecg",
+    "exang",
+    "slope",
+    "ca",
+    "thal"
+  ],
+  "test_metrics": {
+    "accuracy": 0.8360655737704918,
+    "recall_sensitivity": 0.7857142857142857,
+    "specificity": 0.8787878787878788,
+    "precision": 0.8461538461538461,
+    "f1": 0.8148148148148148,
+    "roc_auc": 0.9242424242424243,
+    "pr_auc": 0.9180058085767292,
+    "brier": 0.11761643019163315,
+    "tn": 29,
+    "fp": 4,
+    "fn": 6,
+    "tp": 22,
+    "roc_auc_ci95": [
+      0.8593406593406594,
+      0.975562271062271
+    ],
+    "accuracy_ci95": [
+      0.7377049180327869,
+      0.9180327868852459
+    ],
+    "recall_ci95": [
+      0.6332894736842105,
+      0.9259259259259259
+    ]
+  },
+  "train_metrics": {
+    "accuracy": 0.8796680497925311,
+    "recall_sensitivity": 0.8454545454545455,
+    "specificity": 0.9083969465648855,
+    "precision": 0.8857142857142857,
+    "f1": 0.8651162790697674,
+    "roc_auc": 0.9351839000693962,
+    "pr_auc": 0.9307257323007266,
+    "brier": 0.10349937865242134,
+    "tn": 119,
+    "fp": 12,
+    "fn": 17,
+    "tp": 93
+  },
+  "cv_table": [
+    {
+      "model": "Logistic Regression",
+      "accuracy_mean": 0.8493,
+      "accuracy_std": 0.0445,
+      "recall_mean": 0.8121,
+      "recall_std": 0.0811,
+      "precision_mean": 0.8592,
+      "precision_std": 0.0746,
+      "f1_mean": 0.8304,
+      "f1_std": 0.0496,
+      "roc_auc_mean": 0.9112,
+      "roc_auc_std": 0.0446
+    },
+    {
+      "model": "Random Forest",
+      "accuracy_mean": 0.8271,
+      "accuracy_std": 0.0428,
+      "recall_mean": 0.797,
+      "recall_std": 0.0618,
+      "precision_mean": 0.8265,
+      "precision_std": 0.0752,
+      "f1_mean": 0.8083,
+      "f1_std": 0.0443,
+      "roc_auc_mean": 0.9038,
+      "roc_auc_std": 0.0406
+    },
+    {
+      "model": "SVM (RBF)",
+      "accuracy_mean": 0.8299,
+      "accuracy_std": 0.045,
+      "recall_mean": 0.8,
+      "recall_std": 0.0617,
+      "precision_mean": 0.8301,
+      "precision_std": 0.0822,
+      "f1_mean": 0.8115,
+      "f1_std": 0.0484,
+      "roc_auc_mean": 0.9018,
+      "roc_auc_std": 0.0418
+    },
+    {
+      "model": "XGBoost",
+      "accuracy_mean": 0.8271,
+      "accuracy_std": 0.0414,
+      "recall_mean": 0.803,
+      "recall_std": 0.0736,
+      "precision_mean": 0.8224,
+      "precision_std": 0.0717,
+      "f1_mean": 0.8088,
+      "f1_std": 0.0451,
+      "roc_auc_mean": 0.8927,
+      "roc_auc_std": 0.0507
+    },
+    {
+      "model": "Neural Network (MLP)",
+      "accuracy_mean": 0.7926,
+      "accuracy_std": 0.0672,
+      "recall_mean": 0.7727,
+      "recall_std": 0.0723,
+      "precision_mean": 0.7857,
+      "precision_std": 0.1069,
+      "f1_mean": 0.7744,
+      "f1_std": 0.0666,
+      "roc_auc_mean": 0.8703,
+      "roc_auc_std": 0.0555
+    },
+    {
+      "model": "Decision Tree",
+      "accuracy_mean": 0.7967,
+      "accuracy_std": 0.0457,
+      "recall_mean": 0.7394,
+      "recall_std": 0.0838,
+      "precision_mean": 0.8107,
+      "precision_std": 0.0831,
+      "f1_mean": 0.7678,
+      "f1_std": 0.0524,
+      "roc_auc_mean": 0.8176,
+      "roc_auc_std": 0.0576
+    }
+  ],
+  "versions": {
+    "scikit-learn": "1.9.1",
+    "xgboost": "3.4.1"
+  },
+  "seed": 42
+}
